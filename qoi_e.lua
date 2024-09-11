@@ -158,6 +158,9 @@ local function chunk_qoi_luma_enc(chunks,id)
     if delta_rg >= 248 then delta_rg = delta_rg - 262 end
     if delta_bg >= 248 then delta_bg = delta_bg - 262 end
 
+    if delta_rg <= -248 then delta_rg = delta_rg + 262 end
+    if delta_bg <= -248 then delta_bg = delta_bg + 262 end
+
     local luma_viable = delta_g >= -32 and delta_g <= 31
         and delta_rg >= -8 and delta_rg <= 7
         and delta_bg >= -8 and delta_bg <= 7
