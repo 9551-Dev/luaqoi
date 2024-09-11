@@ -41,19 +41,20 @@ local current_g
 local current_b
 local current_a
 
--- chunks,id,get_pix,color_hash,max_id
 local function chunk_qoi_run_enc(chunks,id,etc)
-    local run_length = 0
+    local run_length  = 0
+    local original_id = id
+
+    local rle_r,rle_g,rle_b,rle_a
+        = current_r,current_g,current_b,current_a
 
     while true do
-        local is_identical = last_pixel_r == current_r
-            and last_pixel_g == current_g
-            and last_pixel_b == current_b
-            and last_pixel_a == current_a
+        local is_identical = last_pixel_r == rle_r
+            and last_pixel_g == rle_g
+            and last_pixel_b == rle_b
+            and last_pixel_a == rle_a
 
         if not is_identical or run_length >= 62 then
-            --id = id - 1
-
             break
         else
             run_length = run_length + 1
@@ -65,16 +66,18 @@ local function chunk_qoi_run_enc(chunks,id,etc)
             break
         end
 
-        etc.get_pixel(id)
+        rle_r,rle_g,rle_b,rle_a = etc.get_pixel(id)
     end
-
-    print("QOI_OP_RLE:",run_length)
 
     if run_length > 0 then
         chunks[#chunks+1] = string_char(QOI_OP_RUN + (run_length-1))
     end
 
-    return run_length > 0,id
+    if run_length > 1 then
+        return true,original_id+run_length-1
+    else
+        return run_length > 0,original_id
+    end
 end
 
 local function chunk_qoi_index_enc(chunks,id,etc)
@@ -94,7 +97,6 @@ local function chunk_qoi_index_enc(chunks,id,etc)
         and hash_list[color_hash-1] == current_b
         and hash_list[color_hash  ] == current_a
 
-    print("QOI_OP_INDEX:",color_hash,is_matching)
     if is_matching then
         chunks[#chunks+1] = string_char(QOI_OP_INDEX + byte_hash)
     end
@@ -102,35 +104,28 @@ local function chunk_qoi_index_enc(chunks,id,etc)
     return is_matching,id
 end
 
-local function chunk_qoi_diff_enc(chunks,id)
+local function chunk_qoi_diff_enc(chunks, id)
     if current_a ~= last_pixel_a then
-        print("QOI_OP_DIFF: false")
-
-        return false,id
+        return false, id
     end
 
-    local delta_r = current_r - last_pixel_r
-    local delta_g = current_g - last_pixel_g
-    local delta_b = current_b - last_pixel_b
+    local delta_r = (current_r - last_pixel_r) % 256
+    local delta_g = (current_g - last_pixel_g) % 256
+    local delta_b = (current_b - last_pixel_b) % 256
 
-    if delta_r >=  254 then delta_r = delta_r-256 end
-    if delta_g >=  254 then delta_g = delta_g-256 end
-    if delta_b >=  254 then delta_b = delta_b-256 end
-    if delta_r <= -254 then delta_r = delta_r+256 end
-    if delta_g <= -254 then delta_g = delta_g+256 end
-    if delta_b <= -254 then delta_b = delta_b+256 end
+    delta_r = (delta_r + 2) % 256
+    delta_g = (delta_g + 2) % 256
+    delta_b = (delta_b + 2) % 256
 
-    local diff_viable = delta_r >= -2 and delta_r <= 1
-        and delta_g >= -2 and delta_g <= 1
-        and delta_b >= -2 and delta_b <= 1
-
-    print("QOI_OP_DIFF:",delta_r,delta_g,delta_b,diff_viable)
+    local diff_viable = delta_r >= 0 and delta_r <= 3
+        and delta_g >= 0 and delta_g <= 3
+        and delta_b >= 0 and delta_b <= 3
 
     if diff_viable then
         local encoded_diffs =
-            (delta_r+2) * 2^4 +
-            (delta_g+2) * 2^2 +
-            delta_b+2
+            (delta_r * 2^4) +
+            (delta_g * 2^2) +
+            delta_b
 
         chunks[#chunks+1] = string_char(QOI_OP_DIFF + encoded_diffs)
     end
@@ -138,49 +133,39 @@ local function chunk_qoi_diff_enc(chunks,id)
     return diff_viable,id
 end
 
-local function chunk_qoi_luma_enc(chunks,id)
+local function chunk_qoi_luma_enc(chunks, id)
     if current_a ~= last_pixel_a then
-        print("QOI_OP_LUMA: false")
-
-        return false,id
+        return false, id
     end
 
-    local delta_r = current_r - last_pixel_r
-    local delta_g = current_g - last_pixel_g
-    local delta_b = current_b - last_pixel_b
+    local delta_r = (current_r - last_pixel_r + 256) % 256
+    local delta_g = (current_g - last_pixel_g + 256) % 256
+    local delta_b = (current_b - last_pixel_b + 256) % 256
+
+    if delta_r > 127 then delta_r = delta_r - 256 end
+    if delta_g > 127 then delta_g = delta_g - 256 end
+    if delta_b > 127 then delta_b = delta_b - 256 end
+
 
     local delta_rg = delta_r - delta_g
     local delta_bg = delta_b - delta_g
-
-    if delta_g >=  224 then delta_g = delta_g - 286 end
-    if delta_g <= -224 then delta_g = delta_g + 286 end
-
-    if delta_rg >= 248 then delta_rg = delta_rg - 262 end
-    if delta_bg >= 248 then delta_bg = delta_bg - 262 end
-
-    if delta_rg <= -248 then delta_rg = delta_rg + 262 end
-    if delta_bg <= -248 then delta_bg = delta_bg + 262 end
 
     local luma_viable = delta_g >= -32 and delta_g <= 31
         and delta_rg >= -8 and delta_rg <= 7
         and delta_bg >= -8 and delta_bg <= 7
 
-    print("QOI_OP_LUMA:",delta_rg,delta_g,delta_bg,luma_viable)
-
     if luma_viable then
-        chunks[#chunks+1] = string_char(QOI_OP_LUMA + delta_g + 32)
-            .. string_char(
-                delta_bg + 8 +
-                bit_lib.lshift(delta_rg + 8,4)
-            )
+
+        local byte1 = (delta_g + 32) + QOI_OP_LUMA
+        local byte2 = (delta_rg + 8) * 16 + (delta_bg + 8)
+
+        chunks[#chunks+1] = string_char(byte1,byte2)
     end
 
     return luma_viable,id
 end
 
 local function chunk_qoi_rgb_enc(chunks,id)
-    print("QOI_OP_RGB:",current_a == last_pixel_a)
-
     if current_a ~= last_pixel_a then
         return false,id
     end
@@ -194,8 +179,6 @@ local function chunk_qoi_rgb_enc(chunks,id)
 end
 
 local function chunk_qoi_rgba_enc(chunks,id)
-    print("QOI_OP_RGBA: define")
-
     chunks[#chunks+1] = string_char(QOI_OP_RGBA)
         .. string_char(current_r)
         .. string_char(current_g)
@@ -205,15 +188,11 @@ local function chunk_qoi_rgba_enc(chunks,id)
     return true,id
 end
 
-local function chunk_qoi_invalid()
-    error("Impossible to encode",2)
-end
-
-function lua_qoi.encode(image_data,width,height,alpha_channel,output_file)
+function lua_qoi.encode(image_data,width,height,alpha_channel,output_file,colorspace)
     local output_stream = ""
 
-    local image_width  = width  or #image_data[#image_data[1]]
-    local image_height = height or #image_data[1]
+    local image_width  = width  or #image_data[1]
+    local image_height = height or #image_data
 
     last_pixel_r,current_r = 0,0
     last_pixel_g,current_g = 0,0
@@ -230,12 +209,14 @@ function lua_qoi.encode(image_data,width,height,alpha_channel,output_file)
     local current_pixel = 1
 
     local function write_hashmap(r,g,b,a)
-        local color_hash = 4 * ((
+        local byte_hash = (
             r*3 +
             g*5 +
             b*7 +
             a*11
-        )%64)
+        ) % 64
+
+        local color_hash = 4*(byte_hash+1)
 
         pixel_hashmap[color_hash-3] = r
         pixel_hashmap[color_hash-2] = g
@@ -252,43 +233,46 @@ function lua_qoi.encode(image_data,width,height,alpha_channel,output_file)
 
     local pixel_count = image_width*image_height
 
-    local pixel_type = type(image_data[1][1])
-    local math_ceil  = math.ceil
+    local pixel_type  = type(image_data[1][1])
+    local math_ceil   = math.ceil
+    local math_floor  = math.floor
     local function get_pixel(pixel_id)
         local pixel_y = math_ceil(pixel_id/image_width)
         local pixel_x = (pixel_id-1)%image_width+1
 
         local pixel_info = image_data[pixel_y][pixel_x]
 
-        last_pixel_r,last_pixel_g,last_pixel_b,last_pixel_a =
-            current_r,current_g,current_b,current_a
-
+        local pixel_r,pixel_g,pixel_b,pixel_a
         if pixel_type == "number" then
-            current_r,current_g,current_b,current_a =
-                math.floor(pixel_info*red_shift_rgb) % byte_band,
-                math.floor(pixel_info*grn_shift_rgb) % byte_band,
-                math.floor(pixel_info*blu_shift_rgb) % byte_band,
-                math.floor(alpha_channel and ((pixel_info*alp_shift_rgb) % byte_band) or 255)
+            local shifted_r = pixel_info*red_shift_rgb
+            local shifted_g = pixel_info*grn_shift_rgb
+            local shifted_b = pixel_info*blu_shift_rgb
+            local shifted_a = pixel_info*alp_shift_rgb
+
+            shifted_r = shifted_r - shifted_r%1
+            shifted_g = shifted_g - shifted_g%1
+            shifted_b = shifted_b - shifted_b%1
+            shifted_a = shifted_a - shifted_a%1
+
+            pixel_r,pixel_g,pixel_b,pixel_a =
+                shifted_r % byte_band,
+                shifted_g % byte_band,
+                shifted_b % byte_band,
+                alpha_channel and (shifted_a % byte_band) or 255
         elseif pixel_type == "table" then
             local scaled_r =  pixel_info[1]       * 255
             local scaled_g =  pixel_info[2]       * 255
             local scaled_b =  pixel_info[3]       * 255
             local scaled_a = (pixel_info[4] or 1) * 255
 
-            current_r,current_g,current_b,current_a =
+            pixel_r,pixel_g,pixel_b,pixel_a =
                 scaled_r - scaled_r%1,
                 scaled_g - scaled_g%1,
                 scaled_b - scaled_b%1,
                 alpha_channel and (scaled_a - scaled_a%1) or 255
         end
 
-        print("Getting pixel:",pixel_y,pixel_x,("r:%s g:%s b:%s a:%s"):format(
-            current_r,current_g,current_b,current_a
-        ))
-
-        write_hashmap(
-            current_r,current_g,current_b,current_a
-        )
+        return pixel_r,pixel_g,pixel_b,pixel_a
     end
 
     local qoi_chunk_types = {
@@ -298,7 +282,6 @@ function lua_qoi.encode(image_data,width,height,alpha_channel,output_file)
         chunk_qoi_luma_enc,
         chunk_qoi_rgb_enc,
         chunk_qoi_rgba_enc,
-        chunk_qoi_invalid
     }
 
     local chunk_type_cnt = #qoi_chunk_types
@@ -309,9 +292,10 @@ function lua_qoi.encode(image_data,width,height,alpha_channel,output_file)
         pixel_count   = pixel_count,
     }
 
-    print()
     while current_pixel <= pixel_count do
-        get_pixel(current_pixel)
+        current_r,current_g,current_b,current_a = get_pixel(
+            current_pixel
+        )
 
         for chunk=1,chunk_type_cnt do
             local encoded,next_pixel = qoi_chunk_types[chunk](
@@ -326,17 +310,28 @@ function lua_qoi.encode(image_data,width,height,alpha_channel,output_file)
             end
         end
 
-        print()
+        last_pixel_r,last_pixel_g,last_pixel_b,last_pixel_a =
+            current_r,current_g,current_b,current_a
+
+        write_hashmap(
+            current_r,current_g,current_b,current_a
+        )
+
+        if (current_pixel%100000 == 0) and os.queueEvent then
+            os.queueEvent("qoi_encode_yield")
+            os.pullEvent ("qoi_encode_yield")
+        end
 
         current_pixel = current_pixel + 1
     end
 
     output_stream = output_stream .. table.concat(qoi_byte_chunks,"")
+        .. "\0\0\0\0\0\0\0\1"
 
     output_stream = encode_qoi_header(
         image_width,image_height,
         alpha_channel and "RGBA" or "RGB",
-        "SRGB_LINEAR"
+        colorspace or "SRGB_LINEAR_ALPHA"
     ) .. output_stream
 
     if output_file then

@@ -10,32 +10,6 @@ local QOI_OP_RUN   = tonumber("11",2)
 
 local bit_lib = _G.bit32 or bit
 
-local function read_bytes(stream,count,as_string)
-    local seek = stream.head
-
-    if as_string then
-        local result_str = stream.data:sub(seek,seek+count-1)
-
-        stream.head = seek+count
-
-        return result_str
-    else
-        local bytes_read = {}
-
-        local stream_data = stream.data
-
-        for i=1,count do
-            bytes_read[i] = stream_data:byte(seek)
-
-            seek = seek + 1
-        end
-
-        stream.head = seek
-
-        return bytes_read
-    end
-end
-
 local function read_byte(stream)
     local seek_head = stream.head
 
@@ -43,13 +17,20 @@ local function read_byte(stream)
     return stream.data:byte(seek_head,seek_head)
 end
 
-local function multibyte_number(bytes)
+local function read_32_bits(stream)
+    return {
+        read_byte(stream),
+        read_byte(stream),
+        read_byte(stream),
+        read_byte(stream)
+    }
+end
+
+local function combine_u32_bytes(bytes)
     local n = 0
 
-    local byte_count = #bytes
-
-    for i=1,byte_count do
-        local shift = 8*(byte_count-i)
+    for i=1,4 do
+        local shift = 8*(4-i)
         n = n + bit_lib.lshift(bytes[i],shift)
     end
 
@@ -68,22 +49,23 @@ local header_lookup = {
 }
 
 local function parse_qoi_header(stream)
-    local magic_id = read_bytes(stream,4,true)
+    local magic_id = stream.data:sub(stream.head,stream.head+3)
+    stream.head = stream.head + 4
 
     if magic_id ~= "qoif" then
         error("Not a QOI file.",3)
     end
 
-    local width_bytes  = read_bytes(stream,4)
-    local height_bytes = read_bytes(stream,4)
-    local channel_byte = read_bytes(stream,1)
-    local space_byte   = read_bytes(stream,1)
+    local width_bytes  = read_32_bits(stream)
+    local height_bytes = read_32_bits(stream)
+    local channel_byte = read_byte   (stream)
+    local space_byte   = read_byte   (stream)
 
     return {
-        width      = multibyte_number(width_bytes),
-        height     = multibyte_number(height_bytes),
-        channels   = header_lookup.channels[channel_byte[1]],
-        colorspace = header_lookup.colspace[space_byte  [1]]
+        width      = combine_u32_bytes(width_bytes),
+        height     = combine_u32_bytes(height_bytes),
+        channels   = header_lookup.channels[channel_byte],
+        colorspace = header_lookup.colspace[space_byte  ]
     }
 end
 
@@ -219,7 +201,6 @@ function lua_qoi.decode(data_source,no_alpha)
             pix_a * alp_shift_rgb
 
         image_pixels[pixel_y][pixel_x] = hex_coded_pixel
-
         local color_hash = 4 * ((
             pix_r*3 +
             pix_g*5 +
@@ -237,50 +218,39 @@ function lua_qoi.decode(data_source,no_alpha)
 
     while pixel_count < expected_pixels do
         local byte = read_byte(stream)
+        if not byte then error("Hit stream end early.",2) end
 
         local chunk_type = bit_lib.rshift(byte,6)
 
         if byte == QOI_OP_RGB then
-            print("QOI_OP_RGB")
-
             write_pixel(
                 chunk_qoi_rgb_dec(
                     stream
                 )
             )
         elseif byte == QOI_OP_RGBA then
-            print("QOI_OP_RGBA")
-
             write_pixel(
                 chunk_qoi_rgba_dec(stream)
             )
         elseif chunk_type == QOI_OP_INDEX then
-            print("QOI_OP_INDEX")
-
             write_pixel(
                 chunk_qoi_index_dec(
                     byte,pixel_hashmap
                 )
             )
         elseif chunk_type == QOI_OP_DIFF then
-            print("QOI_OP_DIFF")
-
             write_pixel(
                 chunk_qoi_diff_dec(
                     byte
                 )
             )
         elseif chunk_type == QOI_OP_LUMA then
-            print("QOI_OP_LUMA")
-
             write_pixel(
                 chunk_qoi_luma_dec(
                     byte,stream
                 )
             )
         elseif chunk_type == QOI_OP_RUN then
-            print("QOI_OP_RUN")
-
             chunk_qoi_run_dec(byte,write_pixel)
         else
             error("Invalid QOI chunk.",2)
