@@ -50,18 +50,18 @@ print(("Pixel at %s:%s is #%x"):format(
 
 ### Example [encoder](./qoi_e.lua) usage
 ```lua
-local qoid = require("qoi_e")
+local qoie = require("qoi_e")
 
 local data = {
     {0xFF0000,0x0000FF},
     {0x00FFFF,0xFFFF00}
 }
 
-local dat = qoid.encode(data)
+local dat = qoie.encode(data)
 ```
 or something like this
 ```lua
-local qoid = require("qoi_e")
+local qoie = require("qoi_e")
 
 local data = {
     {0xFF0000,0x0000FF},
@@ -69,5 +69,5 @@ local data = {
     {0x0000FF,0xFF0000}
 }
 
-qoid.encode(data,2,3,false,"epic_output.ppm")
+qoie.encode(data,2,3,false,"epic_output.ppm")
 ```
