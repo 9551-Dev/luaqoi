@@ -170,20 +170,24 @@ local function chunk_qoi_rgb_enc(chunks,id)
         return false,id
     end
 
-    chunks[#chunks+1] = string_char(QOI_OP_RGB)
-        .. string_char(current_r)
-        .. string_char(current_g)
-        .. string_char(current_b)
+    chunks[#chunks+1] = string_char(
+        QOI_OP_RGB,
+        current_r,
+        current_g,
+        current_b
+    )
 
     return true,id
 end
 
 local function chunk_qoi_rgba_enc(chunks,id)
-    chunks[#chunks+1] = string_char(QOI_OP_RGBA)
-        .. string_char(current_r)
-        .. string_char(current_g)
-        .. string_char(current_b)
-        .. string_char(current_a)
+    chunks[#chunks+1] = string_char(
+        QOI_OP_RGBA,
+        current_r,
+        current_g,
+        current_b,
+        current_a
+    )
 
     return true,id
 end
