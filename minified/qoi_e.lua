@@ -23,9 +23,8 @@ ot=ot-256 end if it>127 then it=it-256 end if nt>127 then nt=nt-256 end local
 st=ot-it local ht=nt-it local rt=it>=-32 and it<=31 and st>=-8 and st<=7 and
 ht>=-8 and ht<=7 if rt then local dt=(it+32)+h local
 lt=(st+8)*16+(ht+8)tt[#tt+1]=a(dt,lt)end return rt,at end local function
-ut(ct,mt)if x~=g then return false,mt end
-ct[#ct+1]=a(o)..a(k)..a(q)..a(j)return true,mt end local function
-ft(wt,yt)wt[#wt+1]=a(i)..a(k)..a(q)..a(j)..a(x)return true,yt end function
+ut(ct,mt)if x~=g then return false,mt end ct[#ct+1]=a(o,k,q,j)return true,mt
+end local function ft(wt,yt)wt[#wt+1]=a(i,k,q,j,x)return true,yt end function
 e.encode(pt,vt,bt,gt,kt,qt)local jt=""local xt=vt or#pt[1]local zt=bt or#pt
 p,k=0,0 v,q=0,0 b,j=0,0 g,x=255,255 local Et={}for Tt=1,64*4 do Et[Tt]=0 end
 local At={}local Ot=1 local function It(Nt,St,Ht,Rt)local
